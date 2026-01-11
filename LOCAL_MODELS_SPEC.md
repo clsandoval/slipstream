@@ -155,7 +155,139 @@ pip install faster-whisper
 ct2-transformers-converter --model openai/whisper-small --output_dir models/whisper-small-ct2
 ```
 
-### 2.4 Whisper Alternatives for Jetson
+### 2.4 STT Service Architecture (Log-Based)
+
+**Architecture Decision**: STT runs as an independent service, writing to a log file that the MCP server reads. This decouples speech capture from Claude's processing loop.
+
+**Data Flow**:
+```
+┌────────────┐     ┌─────────────────┐     ┌────────────────────────┐
+│  Mic       │────▶│  STT Service    │────▶│  transcript.log        │
+│  (always)  │     │  (systemd)      │     │  (append-only)         │
+└────────────┘     └─────────────────┘     └────────────────────────┘
+                                                      │
+┌────────────┐                                        ▼
+│  Headset   │────"<<<COMMIT>>>" marker──────────────▶│
+│  Button    │                                        │
+└────────────┘                                        ▼
+                                           ┌────────────────────────┐
+                                           │  MCP get_voice_input() │
+                                           │  - tracks read pos     │
+                                           │  - returns on commit   │
+                                           └────────────────────────┘
+```
+
+**STT Service Implementation**:
+
+```python
+# stt_service.py - runs as systemd service
+import asyncio
+from faster_whisper import WhisperModel
+from pathlib import Path
+import sounddevice as sd
+import numpy as np
+
+TRANSCRIPT_LOG = Path.home() / ".slipstream" / "transcript.log"
+SAMPLE_RATE = 16000
+CHUNK_SECONDS = 3  # Process audio in 3-second chunks
+
+class STTService:
+    def __init__(self):
+        self.model = WhisperModel("small", device="cuda", compute_type="float16")
+        self.audio_buffer = []
+
+    async def run(self):
+        """Main loop: capture audio, transcribe, append to log."""
+        TRANSCRIPT_LOG.parent.mkdir(parents=True, exist_ok=True)
+
+        with sd.InputStream(samplerate=SAMPLE_RATE, channels=1) as stream:
+            while True:
+                # Capture audio chunk
+                audio, _ = stream.read(int(SAMPLE_RATE * CHUNK_SECONDS))
+                audio = audio.flatten().astype(np.float32)
+
+                # Skip if silence (VAD)
+                if np.abs(audio).max() < 0.01:
+                    continue
+
+                # Transcribe
+                segments, _ = self.model.transcribe(audio, language="en")
+                text = " ".join(seg.text for seg in segments).strip()
+
+                if text:
+                    # Append to log with timestamp
+                    timestamp = datetime.now().isoformat(timespec='milliseconds')
+                    with open(TRANSCRIPT_LOG, "a") as f:
+                        f.write(f"{timestamp} {text}\n")
+
+if __name__ == "__main__":
+    service = STTService()
+    asyncio.run(service.run())
+```
+
+**Button Handler**:
+
+```python
+# button_handler.py - monitors Bluetooth headset button
+from evdev import InputDevice, ecodes
+from pathlib import Path
+
+TRANSCRIPT_LOG = Path.home() / ".slipstream" / "transcript.log"
+
+def monitor_button(device_path: str = "/dev/input/event0"):
+    """Write COMMIT marker when headset button pressed."""
+    device = InputDevice(device_path)
+
+    for event in device.read_loop():
+        if event.type == ecodes.EV_KEY and event.value == 1:  # Key press
+            timestamp = datetime.now().isoformat(timespec='milliseconds')
+            with open(TRANSCRIPT_LOG, "a") as f:
+                f.write(f"{timestamp} <<<COMMIT>>>\n")
+```
+
+**Log File Management**:
+
+```python
+# Log rotation - run daily via cron
+# Keeps last 7 days of transcripts
+
+import shutil
+from datetime import datetime
+
+LOG_PATH = Path.home() / ".slipstream" / "transcript.log"
+ARCHIVE_DIR = Path.home() / ".slipstream" / "transcript_archive"
+
+def rotate_log():
+    if LOG_PATH.exists() and LOG_PATH.stat().st_size > 0:
+        ARCHIVE_DIR.mkdir(exist_ok=True)
+        archive_name = f"transcript_{datetime.now().strftime('%Y%m%d')}.log"
+        shutil.move(LOG_PATH, ARCHIVE_DIR / archive_name)
+
+        # Clean old archives (keep 7 days)
+        for old_log in sorted(ARCHIVE_DIR.glob("transcript_*.log"))[:-7]:
+            old_log.unlink()
+```
+
+**Systemd Service**:
+
+```ini
+# /etc/systemd/system/slipstream-stt.service
+[Unit]
+Description=Slipstream STT Service
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=swim
+ExecStart=/usr/bin/python3 /opt/slipstream/stt_service.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 2.5 Whisper Alternatives for Jetson
 
 If Whisper is too slow on Orin:
 
