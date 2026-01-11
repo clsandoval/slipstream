@@ -1,6 +1,6 @@
 # Endless Pool AI Swim Coach - Technical Specification
 
-**Version**: 0.2.0
+**Version**: 0.3.0
 **Status**: User Journey Complete, Technical Spec Aligned
 **Goal**: 100% complete, 100% automatically verifiable specification before hardware purchase
 **Related**: See [USER_JOURNEY.md](./USER_JOURNEY.md) for complete user experience flow
@@ -174,28 +174,26 @@ Estimated Distance = Stroke Count × Distance-Per-Stroke Ratio
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           JETSON ORIN NANO                                  │
 │                                                                             │
-│  ┌────────────────┐                                                        │
-│  │  Poolside Mic  │─────► STT ─────┐                                       │
-│  │ (always listen)│                │                                        │
-│  └────────────────┘                │                                        │
-│                                    ▼                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                      CLAUDE CODE CLI                                 │   │
-│  │                                                                      │   │
-│  │   - Primary interface (voice wrapper)                               │   │
-│  │   - Configured to use swim-coach MCP server                         │   │
-│  │   - Handles conversation / coaching logic                           │   │
-│  │   - Always listening (single user, private space)                   │   │
-│  │                                                                      │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                    │                                        │
-│                    MCP Tool Calls  │                                        │
-│                                    ▼                                        │
+│  ┌────────────────┐     ┌─────────────┐     ┌────────────────────────┐     │
+│  │  Poolside Mic  │────▶│ STT Service │────▶│  transcript.log        │     │
+│  │ (always listen)│     │ (Whisper)   │     │  (append-only file)    │     │
+│  └────────────────┘     └─────────────┘     └────────────────────────┘     │
+│                                                           │                 │
+│  ┌────────────────┐                                       │                 │
+│  │ Headset Button │───── "commit" signal ─────────────────┤                 │
+│  └────────────────┘                                       │                 │
+│                                                           ▼                 │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                   SWIM COACH MCP SERVER                              │   │
 │  │                   (Python - single server)                           │   │
 │  │                                                                      │   │
-│  │  Phase 1 Tools:                                                     │   │
+│  │  Voice Input:                                                       │   │
+│  │  └── get_voice_input(timeout=10) → Polls transcript log            │   │
+│  │      - Returns new transcription since last read                    │   │
+│  │      - Blocks until: content + button commit, OR timeout            │   │
+│  │      - Tracks read position internally                              │   │
+│  │                                                                      │   │
+│  │  Swim Tools:                                                        │   │
 │  │  ├── get_stroke_rate      → Current strokes/min + trend             │   │
 │  │  ├── get_session_time     → Elapsed time                            │   │
 │  │  ├── get_stroke_count     → Total strokes + est. distance           │   │
@@ -206,8 +204,21 @@ Estimated Distance = Stroke Count × Distance-Per-Stroke Ratio
 │  │  Internal:                                                          │   │
 │  │  ├── Vision Pipeline (YOLO11-Pose + stroke detection)              │   │
 │  │  ├── State Store (stroke rate, count, session time)                │   │
+│  │  ├── STT Log Reader (tracks last_read_pos, button state)           │   │
 │  │  ├── WebSocket Server (pushes to React dashboard)                  │   │
 │  │  └── Notification Service (SMS/Telegram)                           │   │
+│  │                                                                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│            MCP Tool Calls (polls)  │                                        │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                      CLAUDE CODE CLI                                 │   │
+│  │                                                                      │   │
+│  │   - Runs in agent loop, polling get_voice_input()                   │   │
+│  │   - Processes transcribed speech as user messages                   │   │
+│  │   - Calls swim tools to get metrics / control session               │   │
+│  │   - Speaks responses via TTS during rest periods                    │   │
 │  │                                                                      │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                        │
@@ -229,13 +240,15 @@ Estimated Distance = Stroke Count × Distance-Per-Stroke Ratio
 ### 4.2 How It Works
 
 1. **System wakes** when camera detects person (sleeping → standby)
-2. **User speaks** → poolside mic → STT → Claude Code CLI
-3. **Claude Code CLI** calls MCP tools to get metrics / control session
-4. **MCP Server** runs vision pipeline, tracks strokes, manages state
-5. **Claude responds** → TTS → poolside speaker (during rest periods only)
-6. **Dashboard auto-updates** via WebSocket (always current)
-7. **Session ends** → data saved → notification sent (SMS/Telegram)
-8. **User leaves** → timeout → system returns to sleeping
+2. **STT runs continuously** → transcribes speech → appends to `transcript.log`
+3. **Claude polls** `get_voice_input()` in a loop (agent-style)
+4. **User speaks + presses button** → MCP returns transcription to Claude
+5. **Claude processes** message, calls swim tools if needed
+6. **MCP Server** runs vision pipeline, tracks strokes, manages state
+7. **Claude responds** → TTS → poolside speaker (during rest periods only)
+8. **Dashboard auto-updates** via WebSocket (always current)
+9. **Session ends** → data saved → notification sent (SMS/Telegram)
+10. **User leaves** → timeout → system returns to sleeping
 
 ### 4.3 MCP Server Configuration
 
@@ -266,6 +279,8 @@ Estimated Distance = Stroke Count × Distance-Per-Stroke Ratio
 | **Always listening** | Single user, private space; no wake word needed |
 | **Poolside speaker** | Voice output; headset is input-only |
 | **Local file storage** | Agentic approach; Claude queries filesystem directly |
+| **Log-based STT** | Decoupled; STT writes to log, MCP reads from it |
+| **Button-to-commit** | Headset button marks message boundaries |
 
 ### 4.5 Voice Interaction Design
 
@@ -276,7 +291,81 @@ Estimated Distance = Stroke Count × Distance-Per-Stroke Ratio
 | **Dashboard is primary** | Voice confirms, dashboard shows detail |
 | **Proactive during rest** | Coach can initiate conversation during rest periods |
 
-### 4.6 Phase 1 Simplifications
+### 4.6 STT Integration Architecture (Log-Based Polling)
+
+**Why log-based instead of direct input?**
+
+| Concern | Direct STT → CLI | Log-Based (Chosen) |
+|---------|------------------|---------------------|
+| Coupling | Tight - STT must integrate with CLI input | Loose - independent processes |
+| Buffering | Speech lost if Claude busy | Speech preserved in log file |
+| Message boundaries | Unclear when user is "done" | Button press = commit |
+| Control flow | STT pushes to Claude | Claude pulls when ready |
+| MCP fit | Awkward | Perfect - voice is just another tool |
+
+**Components**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  STT SERVICE (independent process)                              │
+│  - Listens to poolside mic continuously                        │
+│  - Runs Whisper (or faster-whisper) on audio chunks            │
+│  - Appends transcriptions to ~/.slipstream/transcript.log      │
+│  - Each line: timestamp + transcribed text                      │
+│  - Runs as systemd service, independent of Claude               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│  HEADSET BUTTON (hardware input)                                │
+│  - Bluetooth headset with button                                │
+│  - Button press = "I'm done speaking, process this"             │
+│  - Writes marker to log OR sets flag file                       │
+│  - Simple Python daemon monitors button via evdev               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│  MCP TOOL: get_voice_input(timeout_seconds=10)                  │
+│                                                                  │
+│  Behavior:                                                       │
+│  1. Read transcript.log from last_read_position                 │
+│  2. If new content AND button was pressed:                      │
+│     → Return transcription immediately                          │
+│  3. If new content but no button yet:                           │
+│     → Wait (user still speaking)                                │
+│  4. If no new content:                                          │
+│     → Sleep, poll every 500ms until timeout                     │
+│  5. On timeout with no input:                                   │
+│     → Return empty/null (Claude can do other things)            │
+│                                                                  │
+│  Returns:                                                        │
+│  { "text": "what's my stroke rate?", "has_input": true }        │
+│  OR                                                              │
+│  { "text": "", "has_input": false }                             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Transcript Log Format**:
+
+```
+~/.slipstream/transcript.log
+───────────────────────────────────────
+2026-01-11T08:30:15.123 what's my current
+2026-01-11T08:30:16.456 stroke rate
+2026-01-11T08:30:17.001 <<<COMMIT>>>
+2026-01-11T08:32:45.789 start a new session
+2026-01-11T08:32:46.234 <<<COMMIT>>>
+```
+
+**Why this works well**:
+
+1. **STT runs independently** - doesn't block on Claude, doesn't lose speech
+2. **Button provides intent** - user decides when message is complete
+3. **Claude polls naturally** - agent loop just keeps calling `get_voice_input()`
+4. **Cheap when idle** - if no speech, MCP tool sleeps 10s before returning
+5. **Robust** - log file survives restarts; can replay for debugging
+6. **Simple** - no complex IPC, just file reads
+
+### 4.7 Phase 1 Simplifications
 
 | Simplified for Phase 1 | Full Version (Later) |
 |------------------------|----------------------|
@@ -423,7 +512,22 @@ Claude can query these files naturally: "How does today compare to last week?" �
 
 **Single server providing all Phase 1 functionality.**
 
-**Tools**:
+**Voice Input Tool**:
+
+| Tool | Description | Returns |
+|------|-------------|---------|
+| `get_voice_input` | Poll for new transcribed speech | `{ "text": "...", "has_input": true/false }` |
+
+Parameters:
+- `timeout_seconds` (default: 10) - How long to wait for input before returning empty
+
+Behavior:
+- Reads `transcript.log` from last read position
+- Returns new text when button commit marker is found
+- Blocks up to `timeout_seconds` if waiting for input
+- Returns `has_input: false` on timeout (Claude can do other work)
+
+**Swim Tools**:
 
 | Tool | Description | Returns |
 |------|-------------|---------|
@@ -594,6 +698,7 @@ These wait until Jetson arrives:
 | 0.1.1 | 2026-01-11 | Added local models spec reference |
 | 0.1.0 | 2026-01-10 | Initial draft with architecture and questions |
 | 0.2.0 | 2026-01-11 | Aligned with USER_JOURNEY.md: added system states, data philosophy, resolved open questions, updated architecture with audio I/O |
+| 0.3.0 | 2026-01-11 | Major STT architecture change: log-based polling via MCP instead of direct CLI input. Added get_voice_input tool, button-to-commit flow, transcript.log format. |
 
 ---
 
