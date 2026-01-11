@@ -1,21 +1,24 @@
 # Endless Pool AI Swim Coach - Technical Specification
 
-**Version**: 0.1.0 (Draft)
-**Status**: Requirements Gathering
+**Version**: 0.2.0
+**Status**: User Journey Complete, Technical Spec Aligned
 **Goal**: 100% complete, 100% automatically verifiable specification before hardware purchase
+**Related**: See [USER_JOURNEY.md](./USER_JOURNEY.md) for complete user experience flow
 
 ---
 
 ## Table of Contents
 
 1. [Vision & Goals](#1-vision--goals)
-2. [Phased Approach](#2-phased-approach)
-3. [Architecture Overview](#3-architecture-overview)
-4. [Key Assumptions](#4-key-assumptions)
-5. [Open Questions](#5-open-questions)
-6. [Component Specifications (Phase 1)](#6-component-specifications-phase-1)
-7. [Verification Strategy (Phase 1)](#7-verification-strategy-phase-1)
-8. [Research Summary](#8-research-summary)
+2. [System States](#2-system-states)
+3. [Phased Approach](#3-phased-approach)
+4. [Architecture Overview](#4-architecture-overview)
+5. [Data & Storage Philosophy](#5-data--storage-philosophy)
+6. [Key Assumptions](#6-key-assumptions)
+7. [Open Questions](#7-open-questions)
+8. [Component Specifications (Phase 1)](#8-component-specifications-phase-1)
+9. [Verification Strategy (Phase 1)](#9-verification-strategy-phase-1)
+10. [Research Summary](#10-research-summary)
 
 ---
 
@@ -51,7 +54,46 @@ A local AI-powered swim coaching system for endless pools that provides:
 
 ---
 
-## 2. Phased Approach
+## 2. System States
+
+The system operates in three distinct power/processing states:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           SYSTEM STATES                                  │
+│                                                                          │
+│   ┌──────────┐         ┌──────────┐         ┌──────────┐               │
+│   │ SLEEPING │ ──────► │ STANDBY  │ ──────► │ SESSION  │               │
+│   │          │ motion  │          │ "start" │          │               │
+│   │ 1 FPM    │ detect  │ active   │ or auto │ swimming │               │
+│   └──────────┘         └──────────┘         └──────────┘               │
+│        ▲                    │                    │                       │
+│        │                    │ timeout            │ "end" or             │
+│        │                    │ (no activity)      │ timeout              │
+│        │                    ▼                    │                       │
+│        └────────────────────┴────────────────────┘                      │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+| State | Description | Processing | Transitions To |
+|-------|-------------|------------|----------------|
+| **Sleeping** | Low-power polling. 1 frame/minute, checks for presence. Dashboard off. Not listening. | Minimal | Standby (motion detected) |
+| **Standby** | Person detected. Full vision active. Always listening. Ready for workout planning. | Medium | Session (voice/auto), Sleeping (timeout) |
+| **Session** | Active swim session. Full tracking, proactive coaching during rest, dashboard live. | Full | Standby (session ends) |
+
+### State Detection Methods
+
+| Detection | Method |
+|-----------|--------|
+| **Presence** | Person detected in camera frame (wake from sleep) |
+| **Swimming** | Active arm motion via pose estimation |
+| **Resting** | Person in frame but no swimming motion |
+| **Gone** | No person detected for extended period (~5 min) |
+
+---
+
+## 3. Phased Approach
 
 ### Phase 1: Stroke Rate MVP (Current Focus)
 
@@ -99,27 +141,51 @@ A local AI-powered swim coaching system for endless pools that provides:
 
 ### Out of Scope (All Phases)
 
-- Distance/pace (not meaningful in endless pool)
-- Turn analysis (no turns)
+- Turn analysis (no turns in endless pool)
 - Start/dive analysis (no starts)
 - Multi-swimmer tracking (single user)
+- GPS/actual distance (stationary swimming)
+
+### Distance Estimation
+
+Distance IS tracked, but estimated via user-configured ratio:
+
+```
+Estimated Distance = Stroke Count × Distance-Per-Stroke Ratio
+```
+
+- User sets their personal ratio (e.g., 1 stroke = 1.5m)
+- Calibrated once, adjusted as technique changes
+- Provides meaningful progress tracking despite stationary swimming
 
 ---
 
-## 3. Architecture Overview
+## 4. Architecture Overview
 
-### 3.1 High-Level Architecture (Phase 1)
+### 4.1 High-Level Architecture (Phase 1)
 
 ```
+                    ┌─────────────┐
+                    │  IP Camera  │
+                    │   (RTSP)    │
+                    └──────┬──────┘
+                           │ Video Stream
+                           ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           JETSON ORIN NANO                                  │
 │                                                                             │
+│  ┌────────────────┐                                                        │
+│  │  Poolside Mic  │─────► STT ─────┐                                       │
+│  │ (always listen)│                │                                        │
+│  └────────────────┘                │                                        │
+│                                    ▼                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                      CLAUDE CODE CLI                                 │   │
 │  │                                                                      │   │
-│  │   - Primary interface (terminal or custom wrapper)                  │   │
+│  │   - Primary interface (voice wrapper)                               │   │
 │  │   - Configured to use swim-coach MCP server                         │   │
 │  │   - Handles conversation / coaching logic                           │   │
+│  │   - Always listening (single user, private space)                   │   │
 │  │                                                                      │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                        │
@@ -132,40 +198,46 @@ A local AI-powered swim coaching system for endless pools that provides:
 │  │  Phase 1 Tools:                                                     │   │
 │  │  ├── get_stroke_rate      → Current strokes/min + trend             │   │
 │  │  ├── get_session_time     → Elapsed time                            │   │
+│  │  ├── get_stroke_count     → Total strokes + est. distance           │   │
 │  │  ├── start_session        → Begin tracking                          │   │
-│  │  ├── end_session          → Stop and save                           │   │
-│  │  └── update_dashboard     → Push state to TV display                │   │
+│  │  ├── end_session          → Stop, save, send notification           │   │
+│  │  └── get_status           → System/swimming state                   │   │
 │  │                                                                      │   │
 │  │  Internal:                                                          │   │
-│  │  ├── Vision Pipeline (RTMPose + stroke detection)                  │   │
-│  │  ├── State Store (current stroke rate, session time)               │   │
-│  │  └── WebSocket Server (pushes to React dashboard)                  │   │
+│  │  ├── Vision Pipeline (YOLO11-Pose + stroke detection)              │   │
+│  │  ├── State Store (stroke rate, count, session time)                │   │
+│  │  ├── WebSocket Server (pushes to React dashboard)                  │   │
+│  │  └── Notification Service (SMS/Telegram)                           │   │
 │  │                                                                      │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                        │
-│                         WebSocket  │                                        │
-│                                    ▼                                        │
-│                         ┌──────────────────┐                               │
-│                         │  React Dashboard │                               │
-│                         │  (Timer + Rate)  │                               │
-│                         └────────┬─────────┘                               │
-│                                  │ HDMI                                    │
-└──────────────────────────────────┼──────────────────────────────────────────┘
-                                   ▼
-                            ┌───────────┐
-                            │  Pool TV  │
-                            └───────────┘
+│          ┌─────────────────────────┼─────────────────────────┐             │
+│          │ WebSocket              │ TTS                      │             │
+│          ▼                         ▼                          │             │
+│  ┌──────────────────┐     ┌────────────────┐                 │             │
+│  │  React Dashboard │     │ Poolside       │                 │             │
+│  │  (Timer + Rate)  │     │ Speaker        │                 │             │
+│  └────────┬─────────┘     └────────────────┘                 │             │
+│           │ HDMI                                              │             │
+└───────────┼──────────────────────────────────────────────────┘             │
+            ▼                                                                 │
+     ┌───────────┐                                                           │
+     │  Pool TV  │                                                           │
+     └───────────┘                                                           │
 ```
 
-### 3.2 How It Works
+### 4.2 How It Works
 
-1. **Claude Code CLI** configured with MCP server in settings
-2. **Swim Coach MCP Server** runs as separate process (stdio transport)
-3. Vision pipeline runs in background thread, continuously updating state
-4. User asks question → Claude Code calls MCP tools → gets metrics → responds
-5. Dashboard auto-updates via WebSocket (not controlled by Claude)
+1. **System wakes** when camera detects person (sleeping → standby)
+2. **User speaks** → poolside mic → STT → Claude Code CLI
+3. **Claude Code CLI** calls MCP tools to get metrics / control session
+4. **MCP Server** runs vision pipeline, tracks strokes, manages state
+5. **Claude responds** → TTS → poolside speaker (during rest periods only)
+6. **Dashboard auto-updates** via WebSocket (always current)
+7. **Session ends** → data saved → notification sent (SMS/Telegram)
+8. **User leaves** → timeout → system returns to sleeping
 
-### 3.3 MCP Server Configuration
+### 4.3 MCP Server Configuration
 
 ```json
 // ~/.claude.json or project .mcp.json
@@ -182,7 +254,7 @@ A local AI-powered swim coaching system for endless pools that provides:
 }
 ```
 
-### 3.4 Key Architectural Decisions
+### 4.4 Key Architectural Decisions
 
 | Decision | Rationale |
 |----------|-----------|
@@ -191,31 +263,94 @@ A local AI-powered swim coaching system for endless pools that provides:
 | **stdio transport** | Standard MCP; easy to debug and test |
 | **Dashboard via WebSocket** | Auto-updates independent of Claude |
 | **Python** | Same as vision pipeline; FastMCP library |
+| **Always listening** | Single user, private space; no wake word needed |
+| **Poolside speaker** | Voice output; headset is input-only |
+| **Local file storage** | Agentic approach; Claude queries filesystem directly |
 
-### 3.5 Phase 1 Simplifications
+### 4.5 Voice Interaction Design
 
-| Removed for Phase 1 | Reason |
-|---------------------|--------|
-| TTS/speak tool | Just read Claude's text response for now |
-| Complex dashboard control | Dashboard auto-displays current state |
-| Session history queries | Just current session |
-| Interval tracking | Just continuous swim time |
+| Principle | Description |
+|-----------|-------------|
+| **Don't interrupt swimming** | Coach only speaks during rest or when asked |
+| **Brief responses** | Keep voice output short; user is exercising |
+| **Dashboard is primary** | Voice confirms, dashboard shows detail |
+| **Proactive during rest** | Coach can initiate conversation during rest periods |
+
+### 4.6 Phase 1 Simplifications
+
+| Simplified for Phase 1 | Full Version (Later) |
+|------------------------|----------------------|
+| Voice command to start | Auto-detect swimming |
+| Manual rest indication | Auto-detect rest via pose |
+| Dashboard summary only | + SMS/Telegram notification |
+| Always on (standby) | Sleeping → Standby → Session states |
 
 ---
 
-## 4. Key Assumptions
+## 5. Data & Storage Philosophy
 
-### 4.1 Hardware Assumptions
+**Principle: Agentic, not structured.**
+
+| Aspect | Approach |
+|--------|----------|
+| **Session data** | Saved as local JSON files |
+| **Workout plans** | No formal feature. Claude reads past sessions and recreates on request. |
+| **Historical queries** | Claude queries local filesystem directly. No database. |
+| **Configuration** | Simple local config file (distance-per-stroke ratio, notification prefs) |
+
+### Why This Approach
+
+- Claude Code CLI is inherently good at reading files and understanding context
+- No need to build rigid data schemas when the AI can interpret freeform data
+- Simplifies implementation; data format can evolve naturally
+- User can say "do what I did last Tuesday" and Claude figures it out
+
+### Data Directory Structure
+
+```
+~/.slipstream/
+├── config.json              # User settings (distance ratio, notifications)
+├── sessions/
+│   ├── 2026-01-11_0830.json # Session data files
+│   ├── 2026-01-10_1900.json
+│   └── ...
+└── logs/                    # System logs if needed
+```
+
+### Example Session File
+
+```json
+{
+  "session_id": "2026-01-11_0830",
+  "started_at": "2026-01-11T08:30:00",
+  "ended_at": "2026-01-11T09:02:14",
+  "duration_seconds": 1934,
+  "stroke_count": 1847,
+  "estimated_distance_m": 2770,
+  "avg_stroke_rate": 57.3,
+  "stroke_rate_samples": [...],
+  "intervals": [...]
+}
+```
+
+Claude can query these files naturally: "How does today compare to last week?" → reads relevant files → computes comparison.
+
+---
+
+## 6. Key Assumptions
+
+### 6.1 Hardware Assumptions
 
 | Assumption | Confidence | Validation Needed |
 |------------|------------|-------------------|
-| Jetson Orin Nano can run RTMPose-m at 30+ FPS | High | Benchmark before purchase |
-| Bone conduction headset works in pool environment | Medium | User testing required |
-| Single above-water camera sufficient for technique analysis | Medium | Compare to underwater options |
+| Jetson Orin Nano can run YOLO11-Pose at 30+ FPS | High | Benchmark before purchase |
+| Poolside microphone picks up voice clearly | Medium | Test in pool acoustics |
+| Poolside speaker audible over pool noise | Medium | Volume/placement testing |
+| Single above-water camera sufficient for stroke detection | High | Side view sees arm motion |
 | IP camera RTSP latency < 100ms | High | Standard for PoE cameras |
 | Pool WiFi sufficient for API calls (~100KB/request) | High | Typical home WiFi |
 
-### 4.2 Software Assumptions
+### 6.2 Software Assumptions
 
 | Assumption | Confidence | Notes |
 |------------|------------|-------|
@@ -224,14 +359,14 @@ A local AI-powered swim coaching system for endless pools that provides:
 | TensorRT conversion for RTMPose is straightforward | Medium | MMDeploy provides tooling |
 | React app can receive WebSocket updates smoothly | High | Standard browser capability |
 
-### 4.3 Algorithm Assumptions (Phase 1)
+### 6.3 Algorithm Assumptions (Phase 1)
 
 | Assumption | Confidence | Validation Plan |
 |------------|------------|-----------------|
 | Stroke detection via wrist trajectory works above-water | Medium | Test on recorded video |
 | Stroke rate calculation stable with 15s rolling window | Medium | Validate against manual count |
 
-### 4.4 Endless Pool Assumptions
+### 6.4 Endless Pool Assumptions
 
 | Assumption | Notes |
 |------------|-------|
@@ -243,45 +378,48 @@ A local AI-powered swim coaching system for endless pools that provides:
 
 ---
 
-## 5. Open Questions
+## 7. Open Questions
 
-### 5.1 Phase 1 Questions (Must Answer)
+### 7.1 Phase 1 Questions (Resolved)
 
-#### Q1: Camera Placement
-- **Options**:
-  - A) Ceiling mount, angled down ~45°
-  - B) Wall mount at pool level, side view
-- **For stroke rate**: Side view likely works; need to see arm motion
-- **Decision needed before**: Buying camera/mount
+#### Q1: Camera Placement ✓
+- **Decision**: Side view (wall mount at pool level)
+- **Rationale**: Sees arm motion clearly for stroke detection
 
-#### Q2: Video Source for Testing
-- **Question**: Where do we get swimming videos to test stroke detection?
-- **Options**:
-  - A) Record ourselves (phone/webcam)
-  - B) Find public swimming footage online
-  - C) Use existing swimming datasets
-- **Decision needed before**: Building vision pipeline
+#### Q2: Video Source for Testing ✓
+- **Decision**: Record ourselves + public footage
+- **Plan**: Phone recording for initial testing, YouTube clips for variety
 
-#### Q3: Ground Truth for Stroke Rate
-- **Question**: How do we know our stroke rate calculation is correct?
-- **Options**:
-  - A) Manually count strokes in test videos, compare
-  - B) Use a stopwatch + count during live test
-- **Simplest**: Manual annotation of 5-10 video clips
+#### Q3: Ground Truth for Stroke Rate ✓
+- **Decision**: Manual annotation
+- **Plan**: Count strokes in 5-10 test clips, compare to algorithm output
 
-### 5.2 Deferred Questions (Phase 2+)
+#### Q4: Voice Interaction Design ✓
+- **Decision**: Always listening (no wake word), proactive during rest only
+- **Rationale**: Single user, private space; don't interrupt swimming
 
-- Camera angle for technique metrics (rotation, symmetry)
-- Voice interaction design (PTT vs proactive)
-- Offline fallback behavior
-- Session history and comparison
-- Multi-stroke support
+#### Q5: Data Storage ✓
+- **Decision**: Local files (JSON), no database
+- **Rationale**: Agentic approach; Claude queries filesystem directly
+
+#### Q6: Distance Tracking ✓
+- **Decision**: Stroke count × user-configured distance-per-stroke ratio
+- **Rationale**: Provides meaningful progress tracking in stationary pool
+
+### 7.2 Remaining Open Questions
+
+| Question | Context |
+|----------|---------|
+| Auto-rest detection accuracy | Can pose reliably distinguish swimming vs standing? |
+| Speaker placement | Where exactly? Volume for pool acoustics? |
+| Notification service | Telegram vs SMS? API setup? |
+| Camera angle for technique (Phase 3) | May need different angle for rotation/symmetry |
 
 ---
 
-## 6. Component Specifications (Phase 1)
+## 8. Component Specifications (Phase 1)
 
-### 6.1 Swim Coach MCP Server
+### 8.1 Swim Coach MCP Server
 
 **Single server providing all Phase 1 functionality.**
 
@@ -295,7 +433,7 @@ A local AI-powered swim coaching system for endless pools that provides:
 | `end_session` | End current session | `{ "summary": { ... } }` |
 | `get_status` | Overall system status | `{ "is_swimming": true, "pose_detected": true, ... }` |
 
-### 6.2 Internal Components (Not MCP-Exposed)
+### 8.2 Internal Components (Not MCP-Exposed)
 
 **Vision Pipeline**:
 - Captures RTSP stream or local video file
@@ -321,7 +459,7 @@ class SwimState:
 - Dashboard displays current stroke rate + session time
 - No MCP control needed; auto-updates
 
-### 6.3 Dashboard (React)
+### 8.3 Dashboard (React)
 
 **Phase 1 Display**:
 ```
@@ -345,9 +483,9 @@ class SwimState:
 
 ---
 
-## 7. Verification Strategy (Phase 1)
+## 9. Verification Strategy (Phase 1)
 
-### 7.1 What We Can Test Without Hardware
+### 9.1 What We Can Test Without Hardware
 
 ```
 Level 0: Unit Tests
@@ -367,7 +505,7 @@ Level 2: Integration Tests (Laptop)
 └── Dashboard shows same data as MCP returns
 ```
 
-### 7.2 Phase 1 Verification Criteria
+### 9.2 Phase 1 Verification Criteria
 
 | Test | Pass Criteria |
 |------|---------------|
@@ -377,14 +515,14 @@ Level 2: Integration Tests (Laptop)
 | Dashboard latency | Updates within 500ms of state change |
 | End-to-end query | Claude returns correct rate within 3s |
 
-### 7.3 Test Data Needed
+### 9.3 Test Data Needed
 
 **Minimum for Phase 1**:
 - 3-5 swimming video clips (freestyle, above-water view)
 - Manual annotation: stroke times for each clip
 - Can use: phone recording, YouTube clips, or webcam
 
-### 7.4 Hardware-Deferred Tests
+### 9.4 Hardware-Deferred Tests
 
 These wait until Jetson arrives:
 - Inference speed on actual hardware
@@ -393,9 +531,9 @@ These wait until Jetson arrives:
 
 ---
 
-## 8. Research Summary
+## 10. Research Summary
 
-### 8.1 Pose Estimation (Phase 1)
+### 10.1 Pose Estimation (Phase 1)
 
 **Recommended: YOLO11-Pose-s**
 - Simpler deployment via Ultralytics
@@ -405,7 +543,7 @@ These wait until Jetson arrives:
 
 **Why not RTMPose first**: More complex deployment (MMDeploy). YOLO11 gets us to working faster.
 
-### 8.2 Stroke Rate Detection
+### 10.2 Stroke Rate Detection
 
 **Approach**: Track wrist keypoint Y-position over time, detect peaks
 - Each peak = one stroke cycle
@@ -414,7 +552,7 @@ These wait until Jetson arrives:
 
 **Expected accuracy**: r > 0.91 correlation with manual count (based on research)
 
-### 8.3 What We're NOT Doing in Phase 1
+### 10.3 What We're NOT Doing in Phase 1
 
 | Metric | Why Deferred |
 |--------|--------------|
@@ -445,15 +583,22 @@ These wait until Jetson arrives:
 | Version | Date | Changes |
 |---------|------|---------|
 | 0.1.0 | 2026-01-10 | Initial draft with architecture and questions |
+| 0.2.0 | 2026-01-11 | Aligned with USER_JOURNEY.md: added system states, data philosophy, resolved open questions, updated architecture with audio I/O |
 
 ---
 
 ## Next Steps (Phase 1)
 
-1. **Answer Q1-Q3** (camera placement, test videos, ground truth method)
-2. **Get test videos** - record or find 3-5 freestyle swimming clips
-3. **Build stroke detection** - YOLO11-Pose + peak detection algorithm
-4. **Validate accuracy** - compare to manual stroke count
-5. **Build MCP server** - expose stroke rate via tools
-6. **Build dashboard** - simple React app with WebSocket
-7. **Integration test** - Claude Code CLI + MCP server end-to-end
+**Design Complete** ✓
+1. ~~Answer Q1-Q3~~ (camera placement, test videos, ground truth method) ✓
+2. ~~Define user journey~~ (see USER_JOURNEY.md) ✓
+3. ~~Define data storage approach~~ (agentic, local files) ✓
+
+**Implementation (Next)**
+4. **Get test videos** - record or find 3-5 freestyle swimming clips
+5. **Build stroke detection** - YOLO11-Pose + peak detection algorithm
+6. **Validate accuracy** - compare to manual stroke count
+7. **Build MCP server** - expose stroke rate via tools
+8. **Build dashboard** - simple React app with WebSocket
+9. **Integration test** - Claude Code CLI + MCP server end-to-end
+10. **Add voice I/O** - STT input, TTS to speaker
