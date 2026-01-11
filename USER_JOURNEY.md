@@ -27,7 +27,7 @@ The system operates in three distinct states:
 │   ┌──────────┐         ┌──────────┐         ┌──────────┐               │
 │   │ SLEEPING │ ──────► │ STANDBY  │ ──────► │ SESSION  │               │
 │   │          │ motion  │          │ "start" │          │               │
-│   │ 1 FPS    │ detect  │ active   │ or auto │ swimming │               │
+│   │ 1 FPM    │ detect  │ active   │ or auto │ swimming │               │
 │   └──────────┘         └──────────┘         └──────────┘               │
 │        ▲                    │                    │                       │
 │        │                    │ timeout            │ "end" or             │

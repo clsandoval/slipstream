@@ -1,7 +1,7 @@
 # Endless Pool AI Swim Coach - Technical Specification
 
-**Version**: 0.3.0
-**Status**: User Journey Complete, Technical Spec Aligned
+**Version**: 0.3.1
+**Status**: User Journey Complete, Technical Spec Aligned, Documents Cross-Referenced
 **Goal**: 100% complete, 100% automatically verifiable specification before hardware purchase
 **Related**: See [USER_JOURNEY.md](./USER_JOURNEY.md) for complete user experience flow
 
@@ -532,10 +532,21 @@ Behavior:
 | Tool | Description | Returns |
 |------|-------------|---------|
 | `get_stroke_rate` | Current stroke rate | `{ "rate": 54, "trend": "stable", "window_seconds": 15 }` |
+| `get_stroke_count` | Total strokes + est. distance | `{ "count": 142, "estimated_distance_m": 213 }` |
 | `get_session_time` | Elapsed session time | `{ "elapsed_seconds": 1234, "formatted": "20:34" }` |
 | `start_session` | Begin a new session | `{ "session_id": "...", "started_at": "..." }` |
 | `end_session` | End current session | `{ "summary": { ... } }` |
 | `get_status` | Overall system status | `{ "is_swimming": true, "pose_detected": true, ... }` |
+
+**Workout Tools** (see [WORKOUT_MODES_SPEC.md](./WORKOUT_MODES_SPEC.md) for details):
+
+| Tool | Description | Returns |
+|------|-------------|---------|
+| `create_workout` | Create workout plan | `{ "workout_id": "...", "segments_count": 9 }` |
+| `start_workout` | Begin workout execution | `{ "started_at": "...", "first_segment": {...} }` |
+| `get_workout_status` | Current workout state | `WorkoutStatus` (segment, progress, etc.) |
+| `skip_segment` | Skip to next segment | `{ "skipped": {...}, "now_on": {...} }` |
+| `end_workout` | End workout early | `{ "summary": {...} }` |
 
 ### 8.2 Internal Components (Not MCP-Exposed)
 
@@ -686,8 +697,11 @@ These wait until Jetson arrives:
 
 | Document | Description |
 |----------|-------------|
+| [USER_JOURNEY.md](./USER_JOURNEY.md) | Complete 7-phase user experience flow |
 | [LOCAL_MODELS_SPEC.md](./LOCAL_MODELS_SPEC.md) | Detailed spec for pose estimation and STT models |
+| [WORKOUT_MODES_SPEC.md](./WORKOUT_MODES_SPEC.md) | Structured workout intervals and MCP control |
 | [diagrams/local_models_flow.md](./diagrams/local_models_flow.md) | Visual data flow diagrams |
+| [diagrams/dashboard_options.md](./diagrams/dashboard_options.md) | Dashboard layout options and state transitions |
 
 ---
 
@@ -699,6 +713,7 @@ These wait until Jetson arrives:
 | 0.1.0 | 2026-01-10 | Initial draft with architecture and questions |
 | 0.2.0 | 2026-01-11 | Aligned with USER_JOURNEY.md: added system states, data philosophy, resolved open questions, updated architecture with audio I/O |
 | 0.3.0 | 2026-01-11 | Major STT architecture change: log-based polling via MCP instead of direct CLI input. Added get_voice_input tool, button-to-commit flow, transcript.log format. |
+| 0.3.1 | 2026-01-11 | Added workout MCP tools, get_stroke_count tool, updated Appendix B with all related docs |
 
 ---
 
