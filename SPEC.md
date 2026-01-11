@@ -440,10 +440,20 @@ These wait until Jetson arrives:
 
 ---
 
-## Appendix B: Version History
+## Appendix B: Related Documents
+
+| Document | Description |
+|----------|-------------|
+| [LOCAL_MODELS_SPEC.md](./LOCAL_MODELS_SPEC.md) | Detailed spec for pose estimation and STT models |
+| [diagrams/local_models_flow.md](./diagrams/local_models_flow.md) | Visual data flow diagrams |
+
+---
+
+## Appendix C: Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 0.1.1 | 2026-01-11 | Added local models spec reference |
 | 0.1.0 | 2026-01-10 | Initial draft with architecture and questions |
 
 ---
