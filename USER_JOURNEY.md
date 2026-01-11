@@ -1,7 +1,7 @@
 # Slipstream User Journey
 
-**Version**: 0.1.0 (Draft)
-**Status**: High-Level Assumptions
+**Version**: 0.1.1
+**Status**: High-Level Design Complete
 
 ---
 
@@ -112,10 +112,8 @@ The system operates in three distinct states:
 
 **Alternative flows**:
 - Skip planning: Just get in and say "start session" for unstructured swim
-- Saved plan: "Let's do Tuesday's workout" (load a saved plan)
+- Reference past session: "Let's do what I did Tuesday" (Claude reads past session files)
 - Quick start: "Start a 20-minute easy swim"
-
-**Open question**: Can user save/name workout plans for reuse?
 
 ---
 
@@ -188,7 +186,7 @@ The system operates in three distinct states:
 - Current interval + progress (if planned workout)
 - Time remaining in interval
 - Stroke rate (current, with trend indicator)
-- Estimated distance (based on stroke rate × current speed assumption)
+- Estimated distance (stroke count × user-configured distance-per-stroke ratio)
 
 ---
 
@@ -354,17 +352,58 @@ Notes: Stroke rate improved vs yesterday (+2/min)
 
 ---
 
-## Open Questions / Assumptions
+## Resolved Design Decisions
 
-| Item | Assumption | Needs Validation |
-|------|------------|------------------|
-| **Distance estimation** | Stroke rate × assumed current speed = distance | How accurate? User sets current speed? |
-| **Text delivery** | SMS or push notification | What service? Phone number? |
-| **Saved workouts** | Can name and reuse workout plans | Storage? Recall by voice? |
-| **Historical data** | Can compare to past sessions | How far back? Where stored? |
-| **Wake sensitivity** | 1 frame/min sufficient for presence | Too slow? Battery/power concern? |
-| **No headset output** | Voice output through poolside speaker | Speaker placement? Volume? |
-| **Auto-rest detection** | Pose can distinguish swimming vs standing | Accuracy threshold? |
+| Decision | Resolution |
+|----------|------------|
+| **Distance estimation** | User sets a **strokes-to-distance ratio** (e.g., 1 stroke = 1.5m). Distance = stroke count × ratio. User calibrates once, adjusts as needed. |
+| **Text delivery** | SMS or Telegram. User configures their preferred method. |
+| **Voice output** | Poolside speaker (not headset). Headset is input-only. |
+| **Wake sensitivity** | 1 frame/minute confirmed sufficient. |
+
+---
+
+## Data & Storage Philosophy
+
+**Principle: Agentic, not structured.**
+
+| Aspect | Approach |
+|--------|----------|
+| **Session data** | Saved as local files (JSON, text, whatever makes sense) |
+| **Workout plans** | No formal "saved workouts" feature. Claude Code CLI reads past session files and can reference/recreate them on request. |
+| **Historical queries** | Claude Code CLI queries local filesystem. No database, no tables. |
+| **Configuration** | Simple local config file (strokes-to-distance ratio, notification preferences, etc.) |
+
+**Why this approach**:
+- Claude Code CLI is inherently good at reading files and understanding context
+- No need to build rigid data schemas when the AI can interpret freeform data
+- Simplifies implementation; data format can evolve naturally
+- User can say "do what I did last Tuesday" and Claude figures it out
+
+**Example data flow**:
+```
+sessions/
+  2026-01-11_morning.json    # Raw session data
+  2026-01-10_evening.json
+  2026-01-09_morning.json
+  ...
+
+User: "How does today compare to last week?"
+Claude: [reads recent files, computes comparison, responds]
+
+User: "Let's do that pyramid workout from last month"
+Claude: [searches sessions for pyramid pattern, recreates plan]
+```
+
+---
+
+## Open Questions (Remaining)
+
+| Item | Notes |
+|------|-------|
+| **Auto-rest detection accuracy** | Can pose estimation reliably distinguish swimming vs standing? Needs testing. |
+| **Speaker placement** | Where exactly? Volume levels for pool acoustics? |
+| **Telegram/SMS setup** | Which service to use, API keys, phone number config |
 
 ---
 
@@ -391,3 +430,4 @@ This lets us validate the core loop before adding intelligence.
 | Version | Date | Changes |
 |---------|------|---------|
 | 0.1.0 | 2026-01-11 | Initial user journey draft |
+| 0.1.1 | 2026-01-11 | Resolved design decisions: distance-per-stroke ratio, SMS/Telegram, poolside speaker, agentic data storage philosophy |
