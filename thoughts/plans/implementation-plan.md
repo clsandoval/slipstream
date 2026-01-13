@@ -1041,12 +1041,12 @@ For a team of 3-4 developers:
 
 ## Related Documents
 
-- [SPEC.md](./SPEC.md) - Technical specification
-- [LOCAL_MODELS_SPEC.md](./LOCAL_MODELS_SPEC.md) - ML model details
-- [USER_JOURNEY.md](./USER_JOURNEY.md) - User experience flow
-- [WORKOUT_MODES_SPEC.md](./WORKOUT_MODES_SPEC.md) - Workout system spec
-- [diagrams/local_models_flow.md](./diagrams/local_models_flow.md) - Data flow diagrams
-- [diagrams/dashboard_options.md](./diagrams/dashboard_options.md) - Dashboard layouts
+- [Technical Spec](../specs/technical-spec.md) - Technical specification
+- [Local Models](../specs/local-models.md) - ML model details
+- [User Journey](../specs/user-journey.md) - User experience flow
+- [Workout Modes](../specs/workout-modes.md) - Workout system spec
+- [Data Flow Diagrams](../design/data-flow-diagrams.md) - Data flow diagrams
+- [Dashboard Layouts](../design/dashboard-layouts.md) - Dashboard layouts
 
 ---
 

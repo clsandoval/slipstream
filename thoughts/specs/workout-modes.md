@@ -2,7 +2,7 @@
 
 **Version**: 0.1.0
 **Status**: Draft
-**Related**: [SPEC.md](./SPEC.md), [USER_JOURNEY.md](./USER_JOURNEY.md), [dashboard_options.md](./diagrams/dashboard_options.md)
+**Related**: [Technical Spec](./technical-spec.md), [User Journey](./user-journey.md), [Dashboard Layouts](../design/dashboard-layouts.md)
 
 ---
 

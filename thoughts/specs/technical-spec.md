@@ -3,7 +3,7 @@
 **Version**: 0.3.1
 **Status**: User Journey Complete, Technical Spec Aligned, Documents Cross-Referenced
 **Goal**: 100% complete, 100% automatically verifiable specification before hardware purchase
-**Related**: See [USER_JOURNEY.md](./USER_JOURNEY.md) for complete user experience flow
+**Related**: See [User Journey](./user-journey.md) for complete user experience flow
 
 ---
 
@@ -538,7 +538,7 @@ Behavior:
 | `end_session` | End current session | `{ "summary": { ... } }` |
 | `get_status` | Overall system status | `{ "is_swimming": true, "pose_detected": true, ... }` |
 
-**Workout Tools** (see [WORKOUT_MODES_SPEC.md](./WORKOUT_MODES_SPEC.md) for details):
+**Workout Tools** (see [Workout Modes](./workout-modes.md) for details):
 
 | Tool | Description | Returns |
 |------|-------------|---------|
@@ -697,11 +697,11 @@ These wait until Jetson arrives:
 
 | Document | Description |
 |----------|-------------|
-| [USER_JOURNEY.md](./USER_JOURNEY.md) | Complete 7-phase user experience flow |
-| [LOCAL_MODELS_SPEC.md](./LOCAL_MODELS_SPEC.md) | Detailed spec for pose estimation and STT models |
-| [WORKOUT_MODES_SPEC.md](./WORKOUT_MODES_SPEC.md) | Structured workout intervals and MCP control |
-| [diagrams/local_models_flow.md](./diagrams/local_models_flow.md) | Visual data flow diagrams |
-| [diagrams/dashboard_options.md](./diagrams/dashboard_options.md) | Dashboard layout options and state transitions |
+| [User Journey](./user-journey.md) | Complete 7-phase user experience flow |
+| [Local Models](./local-models.md) | Detailed spec for pose estimation and STT models |
+| [Workout Modes](./workout-modes.md) | Structured workout intervals and MCP control |
+| [Data Flow Diagrams](../design/data-flow-diagrams.md) | Visual data flow diagrams |
+| [Dashboard Layouts](../design/dashboard-layouts.md) | Dashboard layout options and state transitions |
 
 ---
 
