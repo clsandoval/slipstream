@@ -1,15 +1,15 @@
 # Branch 3: STT Service
 
 **Branch**: `feature/stt-service`
-**Scope**: Speech-to-Text Service + Voice Input
+**Scope**: Speech-to-Text Service
 **Dependencies**: None (foundational branch)
-**Complexity**: Medium
+**Complexity**: Low
 
 ---
 
 ## Description
 
-Independent STT service using Whisper, transcript log management, and the MCP tool for voice input polling.
+Simple always-on STT service. Continuously transcribes speech and appends to a timestamped log file. No VAD, no buttons, no complexity.
 
 ---
 
@@ -17,13 +17,10 @@ Independent STT service using Whisper, transcript log management, and the MCP to
 
 | Component | Description |
 |-----------|-------------|
-| Whisper STT service | `faster-whisper` with CTranslate2, runs as daemon |
-| Voice Activity Detection | Energy threshold or WebRTC VAD |
+| STT service | `faster-whisper` daemon, eternally transcribes |
 | Transcript log | Append-only log file with timestamps |
-| Button handler | Bluetooth headset button → `<<<COMMIT>>>` marker |
-| Systemd services | Service files for STT and button handler |
 | Log rotation | Daily rotation, 7-day retention |
-| MCP tool | `get_voice_input` with log-based polling |
+| Systemd service | Service file for STT daemon |
 
 ---
 
@@ -33,18 +30,26 @@ Independent STT service using Whisper, transcript log management, and the MCP to
 src/stt/
 ├── __init__.py
 ├── stt_service.py         # Whisper transcription daemon
-├── vad.py                 # Voice activity detection
-├── button_handler.py      # Bluetooth button monitoring (evdev)
-├── log_manager.py         # Transcript log rotation/cleanup
-└── voice_input_tool.py    # MCP get_voice_input implementation
+└── log_manager.py         # Transcript log write/rotation
 
 services/
-├── slipstream-stt.service
-└── slipstream-button.service
+└── slipstream-stt.service
 
 scripts/
 └── install_services.sh    # Systemd service installation
 ```
+
+---
+
+## How It Works
+
+1. Service starts, opens microphone
+2. Records audio in chunks (e.g., 3-5 seconds)
+3. Transcribes each chunk with Whisper
+4. Appends transcription to log with timestamp
+5. Repeat forever
+
+That's it.
 
 ---
 
@@ -53,31 +58,14 @@ scripts/
 ```
 ~/.slipstream/transcript.log
 ───────────────────────────────────────
-2026-01-11T08:30:15.123 what's my current
-2026-01-11T08:30:16.456 stroke rate
-2026-01-11T08:30:17.001 <<<COMMIT>>>
+2026-01-11T08:30:15.123 what's my current stroke rate
 2026-01-11T08:32:45.789 start a new session
-2026-01-11T08:32:46.234 <<<COMMIT>>>
+2026-01-11T08:35:12.456 how many laps have I done
 ```
 
 ---
 
 ## Key Interfaces
-
-### MCP Tool
-
-```python
-@mcp.tool()
-def get_voice_input(timeout_seconds: int = 10) -> dict:
-    """
-    Poll for transcribed voice input.
-
-    Returns when:
-    - New transcription + button commit detected
-    - Timeout expires (returns has_input: false)
-    """
-    return {"text": "...", "has_input": True}
-```
 
 ### STT Service
 
@@ -85,10 +73,29 @@ def get_voice_input(timeout_seconds: int = 10) -> dict:
 class STTService:
     def __init__(self, model: str = "small"):
         self.model = WhisperModel(model, device="cuda")
+        self.log_manager = LogManager()
 
     async def run(self):
-        """Main loop: capture audio, transcribe, append to log."""
+        """Main loop: capture audio chunk, transcribe, append to log."""
+        while True:
+            audio = await self.capture_chunk()
+            text = self.transcribe(audio)
+            if text.strip():
+                self.log_manager.append(text)
+```
+
+### Log Manager
+
+```python
+class LogManager:
+    def __init__(self, log_path: Path = ~/.slipstream/transcript.log):
         ...
+
+    def append(self, text: str) -> None:
+        """Append timestamped transcription to log."""
+
+    def rotate_if_needed(self) -> None:
+        """Rotate log daily, keep 7 days."""
 ```
 
 ---
@@ -116,11 +123,10 @@ WantedBy=multi-user.target
 
 ## Success Criteria
 
-- [ ] Whisper transcribes speech with >95% accuracy
-- [ ] Latency <1s for 3-second utterance
-- [ ] Button handler writes COMMIT markers correctly
-- [ ] `get_voice_input` returns on button press or timeout
+- [ ] Whisper transcribes speech continuously
+- [ ] Transcriptions appended to log with timestamps
 - [ ] Log rotation works (keeps 7 days)
+- [ ] Service runs reliably as daemon
 
 ---
 
