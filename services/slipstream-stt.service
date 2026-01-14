@@ -1,0 +1,27 @@
+[Unit]
+Description=Slipstream STT Service
+Documentation=https://github.com/clsandoval/slipstream
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=swim
+Group=audio
+WorkingDirectory=/opt/slipstream
+ExecStart=/opt/slipstream/.venv/bin/python -m src.stt
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/swim/.slipstream
+
+[Install]
+WantedBy=multi-user.target
