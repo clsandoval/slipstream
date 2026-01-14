@@ -1,6 +1,6 @@
 # Slipstream Implementation Plan
 
-**Version**: 1.0.0
+**Version**: 1.1.0
 **Status**: Planning
 **Purpose**: Define parallel implementation branches for the complete Slipstream system
 
@@ -16,7 +16,7 @@ Slipstream is an AI-powered swim coaching system for endless pools, consisting o
 - Local ML models (pose estimation, speech-to-text)
 - MCP server exposing tools to Claude
 - Real-time React dashboard
-- Voice interaction via Claude Code CLI
+- Voice interaction via Claude Agent SDK
 
 ---
 
@@ -245,9 +245,9 @@ None (foundational branch)
 
 ### Branch 3: `feature/stt-service`
 
-**Scope**: Speech-to-Text Service + Voice Input
+**Scope**: Speech-to-Text Service + Continuous Transcription
 
-**Description**: Independent STT service using Whisper, transcript log management, and the MCP tool for voice input polling.
+**Description**: Independent STT service using Whisper that continuously transcribes speech. The Claude Agent SDK handles turn management internally - it tracks which transcriptions it has already processed and handles new ones as they arrive.
 
 #### Components
 
@@ -255,11 +255,9 @@ None (foundational branch)
 |-----------|-------------|
 | Whisper STT service | `faster-whisper` with CTranslate2, runs as daemon |
 | Voice Activity Detection | Energy threshold or WebRTC VAD |
-| Transcript log | Append-only log file with timestamps |
-| Button handler | Bluetooth headset button → `<<<COMMIT>>>` marker |
-| Systemd services | Service files for STT and button handler |
+| Transcript log | Append-only log file with timestamps and sequence IDs |
+| Systemd service | Service file for STT daemon |
 | Log rotation | Daily rotation, 7-day retention |
-| MCP tool | `get_voice_input` with log-based polling |
 
 #### File Structure
 
@@ -268,13 +266,10 @@ src/stt/
 ├── __init__.py
 ├── stt_service.py         # Whisper transcription daemon
 ├── vad.py                 # Voice activity detection
-├── button_handler.py      # Bluetooth button monitoring (evdev)
-├── log_manager.py         # Transcript log rotation/cleanup
-└── voice_input_tool.py    # MCP get_voice_input implementation
+└── log_manager.py         # Transcript log rotation/cleanup
 
 services/
-├── slipstream-stt.service
-└── slipstream-button.service
+└── slipstream-stt.service
 
 scripts/
 └── install_services.sh    # Systemd service installation
@@ -285,37 +280,24 @@ scripts/
 ```
 ~/.slipstream/transcript.log
 ───────────────────────────────────────
-2026-01-11T08:30:15.123 what's my current
-2026-01-11T08:30:16.456 stroke rate
-2026-01-11T08:30:17.001 <<<COMMIT>>>
-2026-01-11T08:32:45.789 start a new session
-2026-01-11T08:32:46.234 <<<COMMIT>>>
+2026-01-11T08:30:15.123 [seq:001] what's my current stroke rate
+2026-01-11T08:32:45.789 [seq:002] start a new session
+2026-01-11T08:35:12.456 [seq:003] how am I doing
 ```
+
+The Agent SDK tracks the last processed sequence ID and handles all new transcriptions.
 
 #### Key Interfaces
-
-```python
-# MCP Tool
-@mcp.tool()
-def get_voice_input(timeout_seconds: int = 10) -> dict:
-    """
-    Poll for transcribed voice input.
-
-    Returns when:
-    - New transcription + button commit detected
-    - Timeout expires (returns has_input: false)
-    """
-    return {"text": "...", "has_input": True}
-```
 
 ```python
 # STT Service
 class STTService:
     def __init__(self, model: str = "small"):
         self.model = WhisperModel(model, device="cuda")
+        self.sequence = 0
 
     async def run(self):
-        """Main loop: capture audio, transcribe, append to log."""
+        """Main loop: capture audio, transcribe, append to log with sequence ID."""
         ...
 ```
 
@@ -342,8 +324,7 @@ WantedBy=multi-user.target
 
 - [ ] Whisper transcribes speech with >95% accuracy
 - [ ] Latency <1s for 3-second utterance
-- [ ] Button handler writes COMMIT markers correctly
-- [ ] `get_voice_input` returns on button press or timeout
+- [ ] Continuous transcription appends to log with sequence IDs
 - [ ] Log rotation works (keeps 7 days)
 
 #### Dependencies
@@ -863,68 +844,64 @@ verification/
 
 ### Branch 9: `feature/claude-integration`
 
-**Scope**: Claude Code CLI Configuration
+**Scope**: Claude Agent SDK Integration
 
-**Description**: Final integration connecting Claude Code CLI to the MCP server, including TTS output and agent behavior configuration.
+**Description**: Final integration using the Claude Agent SDK. The agent continuously monitors the transcript log, tracking which messages it has already processed. New transcriptions are handled as they arrive - no explicit turn detection or button presses needed.
 
 #### Components
 
 | Component | Description |
 |-----------|-------------|
-| MCP configuration | `.mcp.json` with swim-coach server |
-| Environment setup | VIDEO_SOURCE, paths |
+| Agent SDK setup | Claude Agent SDK with MCP server connection |
+| Transcript monitor | Watches log, tracks processed sequence IDs |
 | TTS integration | ElevenLabs/OpenAI for voice output |
-| Agent behavior | Polling loop, coaching patterns |
+| Agent behavior | Process new transcriptions, coaching patterns |
 | System prompt | Claude's swim coach persona |
 
 #### File Structure
 
 ```
-.mcp.json                      # MCP server configuration
+src/agent/
+├── __init__.py
+├── swim_coach.py              # Main agent using Claude Agent SDK
+├── transcript_monitor.py      # Watches transcript log, yields new entries
+└── config.py                  # Agent configuration
+
 src/tts/
 ├── __init__.py
 ├── tts_service.py             # Text-to-speech wrapper
 ├── elevenlabs.py              # ElevenLabs implementation
 ├── openai_tts.py              # OpenAI TTS implementation
 └── speaker.py                 # Audio playback control
+
 docs/
-├── agent_behavior.md          # How Claude uses the tools
+├── agent_behavior.md          # How the agent uses the tools
 ├── coaching_patterns.md       # Example coaching dialogues
 └── system_prompt.md           # Claude's persona
 ```
 
-#### MCP Configuration
-
-```json
-{
-  "mcpServers": {
-    "swim-coach": {
-      "command": "python",
-      "args": ["-m", "swim_coach_mcp"],
-      "env": {
-        "VIDEO_SOURCE": "rtsp://192.168.1.100/stream",
-        "SLIPSTREAM_HOME": "/home/swim/.slipstream"
-      }
-    }
-  }
-}
-```
-
 #### Agent Behavior
 
-Claude operates in a polling loop:
+The agent uses Claude Agent SDK with continuous transcript monitoring:
 
+```python
+# Simplified flow
+agent = SwimCoachAgent(mcp_server="swim-coach")
+
+async for transcription in transcript_monitor.watch():
+    # Agent sees full conversation history
+    # SDK handles what's new vs already processed
+    response = await agent.process(transcription)
+
+    if should_speak(response):
+        await tts.speak(response.text)
 ```
-1. Call get_voice_input(timeout=10)
-2. If has_input:
-   - Process user message
-   - Call relevant swim tools
-   - Respond via TTS (during rest only)
-3. If !has_input and session active:
-   - Check get_status() for state changes
-   - Proactive coaching during rest
-4. Loop
-```
+
+Key behaviors:
+- Agent maintains full conversation context
+- Processes new transcriptions as they arrive (no button needed)
+- Proactively coaches during rest periods
+- Only speaks via TTS during rest (dashboard is primary during swimming)
 
 #### Coaching Patterns
 
@@ -947,8 +924,8 @@ Claude operates in a polling loop:
 
 #### Success Criteria
 
-- [ ] Claude Code CLI connects to MCP server
-- [ ] Voice input loop works correctly
+- [ ] Agent SDK connects to MCP server
+- [ ] Transcript monitoring processes new entries correctly
 - [ ] TTS plays through poolside speaker
 - [ ] Agent provides helpful coaching
 - [ ] Respects "don't interrupt swimming" rule
@@ -1016,13 +993,13 @@ The branches can be organized into parallel workstreams for team development:
 |---|--------|-------|-------|------------|------------|
 | 1 | `vision-pipeline` | Pose + stroke detection | Immediately | None | High |
 | 2 | `mcp-server-core` | MCP + sessions | Immediately | None | Medium |
-| 3 | `stt-service` | Whisper + voice input | Immediately | None | Medium |
+| 3 | `stt-service` | Whisper continuous transcription | Immediately | None | Medium |
 | 4 | `swim-metrics` | Stroke rate tools | After 1+2 | 1, 2 | Low |
 | 5 | `workout-system` | Interval workouts | After 4 | 2, 4 | High |
 | 6 | `dashboard` | React UI | Early (mocks) | 2 | Medium |
 | 7 | `notifications` | SMS/Telegram | After 2 | 2 | Low |
 | 8 | `verification` | Testing suite | Throughout | 1, 3 | Medium |
-| 9 | `claude-integration` | CLI + TTS | Last | All | Low |
+| 9 | `claude-integration` | Agent SDK + TTS | Last | All | Low |
 
 ---
 
@@ -1054,4 +1031,5 @@ For a team of 3-4 developers:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1.0 | 2026-01-14 | Switch to Claude Agent SDK; remove button-based turn detection; continuous transcription model |
 | 1.0.0 | 2026-01-11 | Initial implementation plan |

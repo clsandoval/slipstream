@@ -155,25 +155,22 @@ pip install faster-whisper
 ct2-transformers-converter --model openai/whisper-small --output_dir models/whisper-small-ct2
 ```
 
-### 2.4 STT Service Architecture (Log-Based)
+### 2.4 STT Service Architecture (Continuous Transcription)
 
-**Architecture Decision**: STT runs as an independent service, writing to a log file that the MCP server reads. This decouples speech capture from Claude's processing loop.
+**Architecture Decision**: STT runs as an independent service, writing to a log file with sequence IDs. The Claude Agent SDK monitors this log and tracks which transcriptions have been processed. No button or explicit "commit" signal needed.
 
 **Data Flow**:
 ```
 ┌────────────┐     ┌─────────────────┐     ┌────────────────────────┐
 │  Mic       │────▶│  STT Service    │────▶│  transcript.log        │
-│  (always)  │     │  (systemd)      │     │  (append-only)         │
+│  (always)  │     │  (systemd)      │     │  (append-only, seq IDs)│
 └────────────┘     └─────────────────┘     └────────────────────────┘
                                                       │
-┌────────────┐                                        ▼
-│  Headset   │────"<<<COMMIT>>>" marker──────────────▶│
-│  Button    │                                        │
-└────────────┘                                        ▼
+                                                      ▼
                                            ┌────────────────────────┐
-                                           │  MCP get_voice_input() │
-                                           │  - tracks read pos     │
-                                           │  - returns on commit   │
+                                           │  Claude Agent SDK      │
+                                           │  - tracks last seq ID  │
+                                           │  - processes new msgs  │
                                            └────────────────────────┘
 ```
 
@@ -186,6 +183,7 @@ from faster_whisper import WhisperModel
 from pathlib import Path
 import sounddevice as sd
 import numpy as np
+from datetime import datetime
 
 TRANSCRIPT_LOG = Path.home() / ".slipstream" / "transcript.log"
 SAMPLE_RATE = 16000
@@ -194,10 +192,10 @@ CHUNK_SECONDS = 3  # Process audio in 3-second chunks
 class STTService:
     def __init__(self):
         self.model = WhisperModel("small", device="cuda", compute_type="float16")
-        self.audio_buffer = []
+        self.sequence = 0
 
     async def run(self):
-        """Main loop: capture audio, transcribe, append to log."""
+        """Main loop: capture audio, transcribe, append to log with sequence ID."""
         TRANSCRIPT_LOG.parent.mkdir(parents=True, exist_ok=True)
 
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1) as stream:
@@ -215,34 +213,15 @@ class STTService:
                 text = " ".join(seg.text for seg in segments).strip()
 
                 if text:
-                    # Append to log with timestamp
+                    # Append to log with timestamp and sequence ID
+                    self.sequence += 1
                     timestamp = datetime.now().isoformat(timespec='milliseconds')
                     with open(TRANSCRIPT_LOG, "a") as f:
-                        f.write(f"{timestamp} {text}\n")
+                        f.write(f"{timestamp} [seq:{self.sequence:03d}] {text}\n")
 
 if __name__ == "__main__":
     service = STTService()
     asyncio.run(service.run())
-```
-
-**Button Handler**:
-
-```python
-# button_handler.py - monitors Bluetooth headset button
-from evdev import InputDevice, ecodes
-from pathlib import Path
-
-TRANSCRIPT_LOG = Path.home() / ".slipstream" / "transcript.log"
-
-def monitor_button(device_path: str = "/dev/input/event0"):
-    """Write COMMIT marker when headset button pressed."""
-    device = InputDevice(device_path)
-
-    for event in device.read_loop():
-        if event.type == ecodes.EV_KEY and event.value == 1:  # Key press
-            timestamp = datetime.now().isoformat(timespec='milliseconds')
-            with open(TRANSCRIPT_LOG, "a") as f:
-                f.write(f"{timestamp} <<<COMMIT>>>\n")
 ```
 
 **Log File Management**:
@@ -253,6 +232,7 @@ def monitor_button(device_path: str = "/dev/input/event0"):
 
 import shutil
 from datetime import datetime
+from pathlib import Path
 
 LOG_PATH = Path.home() / ".slipstream" / "transcript.log"
 ARCHIVE_DIR = Path.home() / ".slipstream" / "transcript_archive"

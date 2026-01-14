@@ -370,12 +370,12 @@ Notes: Stroke rate improved vs yesterday (+2/min)
 | Aspect | Approach |
 |--------|----------|
 | **Session data** | Saved as local files (JSON, text, whatever makes sense) |
-| **Workout plans** | No formal "saved workouts" feature. Claude Code CLI reads past session files and can reference/recreate them on request. |
-| **Historical queries** | Claude Code CLI queries local filesystem. No database, no tables. |
+| **Workout plans** | No formal "saved workouts" feature. Claude (via Agent SDK) reads past session files and can reference/recreate them on request. |
+| **Historical queries** | Claude (via Agent SDK) queries local filesystem. No database, no tables. |
 | **Configuration** | Simple local config file (strokes-to-distance ratio, notification preferences, etc.) |
 
 **Why this approach**:
-- Claude Code CLI is inherently good at reading files and understanding context
+- Claude (via Agent SDK) is inherently good at reading files and understanding context
 - No need to build rigid data schemas when the AI can interpret freeform data
 - Simplifies implementation; data format can evolve naturally
 - User can say "do what I did last Tuesday" and Claude figures it out
@@ -429,5 +429,6 @@ This lets us validate the core loop before adding intelligence.
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 0.1.0 | 2026-01-11 | Initial user journey draft |
+| 0.1.2 | 2026-01-14 | Updated references from Claude Code CLI to Claude Agent SDK |
 | 0.1.1 | 2026-01-11 | Resolved design decisions: distance-per-stroke ratio, SMS/Telegram, poolside speaker, agentic data storage philosophy |
+| 0.1.0 | 2026-01-11 | Initial user journey draft |

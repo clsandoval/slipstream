@@ -5,6 +5,7 @@ Local AI swim coach for endless pools. Real-time stroke analysis using computer 
 ## Tech Stack
 
 - **Python 3.11+** with `uv` package manager
+- **Claude Agent SDK** for voice interaction and coaching
 - **FastMCP** for MCP server (stdio transport)
 - **YOLO11-Pose** for pose estimation (TensorRT on Jetson)
 - **Whisper** (faster-whisper) for speech-to-text
@@ -31,7 +32,8 @@ Never use `pip install` or `python` directly. Always prefix with `uv run`.
 src/
 ├── vision/          # Pose estimation, stroke detection, rate calculation
 ├── mcp/             # FastMCP server, tools, workout system
-├── stt/             # Whisper transcription daemon, button handler
+├── stt/             # Whisper transcription daemon (continuous)
+├── agent/           # Claude Agent SDK integration
 ├── tts/             # Text-to-speech (ElevenLabs/OpenAI)
 └── notifications/   # Telegram/SMS session summaries
 
@@ -114,8 +116,8 @@ Each branch has its own spec: `thoughts/plans/01-vision-pipeline/` through `09-c
 
 - ML models in `models/` are gitignored (large files, device-specific)
 - WebSocket requires both MCP server AND dashboard running
-- STT runs as independent systemd service, writes to transcript.log
-- Button press writes `<<<COMMIT>>>` marker to transcript.log
+- STT runs as independent systemd service, writes to transcript.log with sequence IDs
+- Agent SDK monitors transcript.log and tracks processed messages
 - Never commit `.env` files or API keys
 - Dashboard must be readable from 10ft (pool distance)
 
@@ -136,12 +138,12 @@ Nine parallel branches (see `thoughts/plans/`):
 |---|--------|-------|
 | 1 | vision-pipeline | Pose estimation, stroke detection |
 | 2 | mcp-server-core | FastMCP, sessions, WebSocket |
-| 3 | stt-service | Whisper daemon, button handler |
+| 3 | stt-service | Whisper continuous transcription |
 | 4 | swim-metrics | Stroke rate/count MCP tools |
 | 5 | workout-system | Intervals, state machine |
 | 6 | dashboard | React poolside display |
 | 7 | notifications | SMS/Telegram summaries |
 | 8 | verification | Test infrastructure |
-| 9 | claude-integration | CLI config, TTS, agent behavior |
+| 9 | claude-integration | Agent SDK, TTS, agent behavior |
 
 Foundational (1, 2, 3) can start immediately. Others have dependencies.

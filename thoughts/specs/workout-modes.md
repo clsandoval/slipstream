@@ -385,9 +385,9 @@ The dashboard renders based on the state it receives:
 
 ## Claude's Role
 
-Claude is the "coach intelligence" - it:
+Claude (via Agent SDK) is the "coach intelligence" - it:
 
-1. **Polls for voice input**: Calls `get_voice_input()` in a loop (see SPEC.md §4.6)
+1. **Monitors transcripts**: Tracks processed messages via sequence IDs (see SPEC.md §4.6)
 2. **Understands user intent**: "Let's do the same as Tuesday" → reads session files
 3. **Builds workout plans**: Constructs appropriate segment structure
 4. **Creates workouts**: Calls `create_workout()` with the plan
@@ -564,4 +564,5 @@ The dashboard options doc already shows interval displays. This spec defines:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 0.2.0 | 2026-01-14 | Updated for Claude Agent SDK (removed polling, added transcript monitoring) |
 | 0.1.0 | 2026-01-11 | Initial draft |
