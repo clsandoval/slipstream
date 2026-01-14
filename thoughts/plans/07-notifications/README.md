@@ -1,15 +1,15 @@
 # Branch 7: Notifications
 
 **Branch**: `feature/notifications`
-**Scope**: Post-Session Notifications
-**Dependencies**: Branch 2 (mcp-server-core)
+**Scope**: Post-Session Notifications (Telegram)
+**Dependencies**: Branch 2 (mcp-server-core), Branch 4 (swim-metrics)
 **Complexity**: Low
 
 ---
 
 ## Description
 
-Send session summaries via SMS or Telegram after workout completion.
+Send session summaries via Telegram after workout completion.
 
 ---
 
@@ -17,11 +17,9 @@ Send session summaries via SMS or Telegram after workout completion.
 
 | Component | Description |
 |-----------|-------------|
-| Notification service | Abstract base + implementations |
-| Telegram integration | Bot API, message formatting |
-| SMS integration | Twilio or similar provider |
-| Session summary format | Markdown template |
-| Integration | Trigger on `end_session` |
+| Telegram notifier | Bot API integration |
+| Session formatter | Summary message formatting |
+| Notification manager | Orchestrates sending on session end |
 
 ---
 
@@ -30,11 +28,9 @@ Send session summaries via SMS or Telegram after workout completion.
 ```
 src/notifications/
 ├── __init__.py
-├── base.py                # Abstract NotificationService
 ├── telegram.py            # Telegram bot implementation
-├── sms.py                 # SMS via Twilio
 ├── formatter.py           # Summary message formatting
-└── config.py              # API keys, preferences
+└── manager.py             # Notification orchestration
 ```
 
 ---
@@ -42,18 +38,23 @@ src/notifications/
 ## Key Interfaces
 
 ```python
-class NotificationService(ABC):
-    @abstractmethod
-    async def send(self, recipient: str, message: str) -> bool:
-        """Send notification, return success status."""
+@dataclass
+class TelegramConfig:
+    bot_token: str
+    chat_id: str
+    enabled: bool = True
+
+class TelegramNotifier:
+    def __init__(self, config: TelegramConfig):
         ...
 
-class TelegramNotifier(NotificationService):
-    def __init__(self, bot_token: str):
+    async def send(self, message: str) -> bool:
+        """Send message to configured chat, return success status."""
         ...
 
-class SMSNotifier(NotificationService):
-    def __init__(self, twilio_sid: str, twilio_token: str, from_number: str):
+class SessionFormatter:
+    def format_summary(self, session: SessionData) -> str:
+        """Format session data as Telegram message."""
         ...
 ```
 
@@ -77,10 +78,10 @@ Notes: Stroke rate improved vs yesterday (+2/min)
 ## Success Criteria
 
 - [ ] Telegram messages send successfully
-- [ ] SMS messages send successfully
 - [ ] Summary format is clear and readable
 - [ ] Notifications triggered on session end
 - [ ] Handles API failures gracefully
+- [ ] Configurable enable/disable
 
 ---
 
@@ -88,3 +89,4 @@ Notes: Stroke rate improved vs yesterday (+2/min)
 
 Requires:
 - Branch 2: `feature/mcp-server-core` (session data for summary)
+- Branch 4: `feature/swim-metrics` (stroke metrics for summary)
