@@ -1,0 +1,26 @@
+name: Stroke Queries
+description: Test stroke rate and count queries
+tags: [core, metrics]
+
+steps:
+  - action: start_session
+    expect:
+      session.active: true
+
+  - action: set_swimming
+    params:
+      value: true
+
+  - action: set_stroke_rate
+    params:
+      rate: 52.5
+
+  - action: set_stroke_count
+    params:
+      count: 100
+
+  - action: wait
+    params:
+      duration: 0.3
+
+  - action: end_session

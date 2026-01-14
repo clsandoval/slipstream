@@ -1,0 +1,24 @@
+name: WebSocket State Updates
+description: Verify WebSocket broadcasts state changes
+tags: [core, websocket]
+
+steps:
+  - action: wait
+    params:
+      duration: 0.3
+    description: Wait for initial state
+    expect:
+      session.active: false
+      system.is_swimming: false
+
+  - action: start_session
+    expect:
+      session.active: true
+
+  - action: wait
+    params:
+      duration: 0.5
+
+  - action: end_session
+    expect:
+      session.active: false

@@ -1,0 +1,29 @@
+name: Session Lifecycle
+description: Test basic session start/stop flow
+tags: [core, session]
+
+steps:
+  - action: start_session
+    description: Start a new session
+    expect:
+      session.active: true
+
+  - action: set_swimming
+    params:
+      value: true
+    description: Swimmer starts swimming
+
+  - action: set_stroke_count
+    params:
+      count: 50
+    description: Simulate 50 strokes
+
+  - action: wait
+    params:
+      duration: 0.5
+    description: Let state propagate
+
+  - action: end_session
+    description: End the session
+    expect:
+      session.active: false
