@@ -121,7 +121,7 @@ class STTService:
     def __init__(
         self,
         model: str = "small",
-        device: str = "cuda",
+        device: str = "auto",  # auto-detect: cuda > cpu
         chunk_duration: float = 3.0,
     ):
         self.model = WhisperModel(model, device=device)
@@ -208,8 +208,8 @@ uv add --dev pytest-asyncio pytest-mock
 
 ## Success Metrics
 
-- [ ] All unit tests pass
-- [ ] Integration tests pass
-- [ ] >90% code coverage on `src/stt/`
-- [ ] Service runs continuously without memory leaks
-- [ ] Log rotation verified
+- [x] All unit tests pass (35 tests)
+- [x] Integration tests pass (5 tests)
+- [x] >90% code coverage on `src/stt/` (log_manager: 97%, stt_service: 92%)
+- [ ] Service runs continuously without memory leaks (requires hardware testing)
+- [x] Log rotation verified
