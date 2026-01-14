@@ -5,9 +5,12 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.mcp.models.messages import SessionState, SystemState, StateUpdate
+
+if TYPE_CHECKING:
+    from src.vision.state_store import SwimState
 
 
 class SessionActiveError(Exception):
@@ -182,3 +185,25 @@ class StateStore:
             return "decreasing"
         else:
             return "stable"
+
+    def sync_from_vision(self, vision_state: "SwimState") -> None:
+        """
+        Sync MCP state from vision pipeline.
+
+        Called by the server to keep states aligned. Updates stroke count,
+        stroke rate, estimated distance, and rate trend from vision state.
+
+        Args:
+            vision_state: Current state from vision pipeline
+        """
+        with self._lock:
+            self.session.stroke_count = vision_state.stroke_count
+            self.session.stroke_rate = vision_state.stroke_rate
+            self.session.estimated_distance_m = vision_state.stroke_count * self.dps_ratio
+
+            # Update rate history from vision for trend calculation
+            if vision_state.rate_history:
+                self._stroke_rate_history = [
+                    sample.rate for sample in vision_state.rate_history[-10:]
+                ]
+                self.session.stroke_rate_trend = self._calculate_trend()
