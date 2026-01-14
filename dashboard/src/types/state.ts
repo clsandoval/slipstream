@@ -11,6 +11,8 @@ export interface SystemState {
   is_swimming: boolean;
   pose_detected: boolean;
   voice_state: 'idle' | 'listening' | 'speaking';
+  last_transcription?: string;
+  transcription_timestamp?: string;
 }
 
 export interface StateUpdate {
