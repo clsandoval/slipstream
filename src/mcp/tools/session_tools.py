@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Coroutine
 
 from src.mcp.state_store import (
     NoActiveSessionError,
@@ -12,11 +13,13 @@ from src.mcp.state_store import (
 )
 from src.mcp.storage.session_storage import SessionStorage
 
+logger = logging.getLogger(__name__)
+
 
 def create_session_tools(
     state_store: StateStore,
     session_storage: SessionStorage,
-) -> list[Callable[[], dict[str, Any]]]:
+) -> list[Callable[[], dict[str, Any] | Coroutine[Any, Any, dict[str, Any]]]]:
     """Create session management tools for MCP registration.
 
     Args:
@@ -46,7 +49,7 @@ def create_session_tools(
         except SessionActiveError:
             return {"error": "A session is already active"}
 
-    def end_session() -> dict[str, Any]:
+    async def end_session() -> dict[str, Any]:
         """End current session and save data.
 
         Returns a dict with session summary, or error if no active session.
@@ -67,7 +70,20 @@ def create_session_tools(
                 },
             )
 
-            return {"summary": summary}
+            result: dict[str, Any] = {"summary": summary}
+
+            # Trigger notification if configured
+            if state_store.notification_manager:
+                try:
+                    notification_sent = (
+                        await state_store.notification_manager.on_session_end(summary)
+                    )
+                    result["notification_sent"] = notification_sent
+                except Exception as e:
+                    logger.error(f"Notification error: {e}")
+                    result["notification_sent"] = False
+
+            return result
         except NoActiveSessionError:
             return {"error": "No active session to end"}
 

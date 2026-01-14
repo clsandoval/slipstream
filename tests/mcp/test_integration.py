@@ -50,7 +50,7 @@ class TestIntegration:
         server.state_store.update_strokes(count=150, rate=53.0)
 
         # End session
-        end_result = server._end_session()
+        end_result = await server._end_session()
         assert "summary" in end_result
         assert end_result["summary"]["stroke_count"] == 150
 
@@ -98,7 +98,7 @@ class TestIntegration:
 
             server.state_store.update_strokes(count=i * 10, rate=50.0)
 
-            end = server._end_session()
+            end = await server._end_session()
             assert "summary" in end
 
     @pytest.mark.asyncio
@@ -110,7 +110,7 @@ class TestIntegration:
         start = server._start_session()
         session_id = start["session_id"]
         server.state_store.update_strokes(count=75, rate=51.0)
-        server._end_session()
+        await server._end_session()
 
         # Read directly from storage
         session_file = temp_config_dir / "sessions" / f"{session_id}.json"

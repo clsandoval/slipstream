@@ -16,6 +16,7 @@ from src.mcp.tools.metric_bridge import MetricBridge
 from src.mcp.tools.session_tools import create_session_tools
 from src.mcp.tools.swim_tools import create_swim_tools
 from src.mcp.websocket_server import WebSocketServer
+from src.notifications.manager import NotificationManager
 from src.vision.state_store import StateStore as VisionStateStore
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,12 @@ class SwimCoachServer:
             vision_state_store=self.vision_state_store,
             config=self.config,
         )
+
+        # Notifications
+        self.notification_manager = NotificationManager.from_config(
+            self.config_dir / "config.json"
+        )
+        self.state_store.notification_manager = self.notification_manager
 
         # Create MCP server
         self.mcp = FastMCP("swim-coach")

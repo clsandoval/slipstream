@@ -52,23 +52,25 @@ class TestSessionTools:
         assert "error" in result
         assert "already active" in result["error"].lower()
 
-    def test_end_session_tool(
+    @pytest.mark.asyncio
+    async def test_end_session_tool(
         self, tools: dict, state_store: StateStore
     ) -> None:
         """end_session returns summary with stroke data."""
         tools["start_session"]()
         state_store.update_strokes(count=50, rate=52.5)
 
-        result = tools["end_session"]()
+        result = await tools["end_session"]()
 
         assert "summary" in result
         assert result["summary"]["stroke_count"] == 50
         assert "duration_seconds" in result["summary"]
         assert state_store.session.active is False
 
-    def test_end_session_not_active(self, tools: dict) -> None:
+    @pytest.mark.asyncio
+    async def test_end_session_not_active(self, tools: dict) -> None:
         """end_session returns error when no session active."""
-        result = tools["end_session"]()
+        result = await tools["end_session"]()
 
         assert "error" in result
         assert "no active session" in result["error"].lower()
@@ -96,14 +98,15 @@ class TestSessionTools:
         assert result["session_active"] is False
         assert result["stroke_count"] == 0
 
-    def test_session_persisted_to_storage(
+    @pytest.mark.asyncio
+    async def test_session_persisted_to_storage(
         self, tools: dict, storage: SessionStorage, state_store: StateStore
     ) -> None:
         """Session data persisted to storage after end."""
         result = tools["start_session"]()
         session_id = result["session_id"]
         state_store.update_strokes(count=100, rate=55.0)
-        tools["end_session"]()
+        await tools["end_session"]()
 
         # Check storage
         stored = storage.get_session(session_id)

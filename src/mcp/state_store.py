@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from src.mcp.models.messages import SessionState, SystemState, StateUpdate
 
 if TYPE_CHECKING:
+    from src.notifications.manager import NotificationManager
     from src.vision.state_store import SwimState
 
 
@@ -32,6 +33,7 @@ class StateStore:
     session: SessionState = field(default_factory=SessionState)
     system: SystemState = field(default_factory=SystemState)
     dps_ratio: float = 1.8
+    notification_manager: "NotificationManager | None" = None
     _session_id: str | None = field(default=None, repr=False)
     _started_at: datetime | None = field(default=None, repr=False)
     _stroke_rate_history: list[float] = field(default_factory=list, repr=False)
